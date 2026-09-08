@@ -80,6 +80,8 @@ let lastAnalysis = null;
 let currentUser = null;
 let savedProjects = [];
 let editingProjectId = null;
+let trackingEntries = [];
+let trackerGroups = [];
 
 function typeIcon(type) {
     const icons = {
@@ -126,6 +128,11 @@ const adminView = document.getElementById('adminView');
 const adminGrid = document.getElementById('adminGrid');
 const adminCount = document.getElementById('adminCount');
 const adminFormCard = document.getElementById('adminFormCard');
+const trackerView = document.getElementById('trackerView');
+const trackerCustomGrid = document.getElementById('trackerCustomGrid');
+const trackerRealGrid = document.getElementById('trackerRealGrid');
+const trackerCount = document.getElementById('trackerCount');
+const trackerFlagsPanel = document.getElementById('trackerFlagsPanel');
 
 let dbCurrentState = 'all';
 
@@ -192,6 +199,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         savedProjects = await api('/api/saved');
     } catch (err) {
         savedProjects = [];
+    }
+
+    // Load this user's progress tracker history
+    try {
+        trackingEntries = await api('/api/tracking');
+    } catch (err) {
+        trackingEntries = [];
     }
 
     // Theme
@@ -282,6 +296,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     const adminSeedBtn = document.getElementById('adminSeedBtn');
     if (adminSeedBtn) adminSeedBtn.addEventListener('click', adminSeed);
 
+    // Progress tracker controls
+    const syncRealBtn = document.getElementById('syncRealBtn');
+    if (syncRealBtn) syncRealBtn.addEventListener('click', syncRealProjects);
+    const clearTrackerBtn = document.getElementById('clearTrackerBtn');
+    if (clearTrackerBtn) clearTrackerBtn.addEventListener('click', clearTracking);
+
     // Mobile sidebar collapse toggle
     const collapseBtn = document.getElementById('sidebarCollapse');
     const floatingInputBtn = document.getElementById('floatingInputBtn');
@@ -360,6 +380,8 @@ function handleTabSwitch(tab) {
     if (reportsView) reportsView.style.display = 'none';
     // Hide saved view if exists
     if (savedView) savedView.style.display = 'none';
+    // Hide tracker view if exists
+    if (trackerView) trackerView.style.display = 'none';
     // Hide admin view if exists
     if (adminView) adminView.style.display = 'none';
 
@@ -381,6 +403,10 @@ function handleTabSwitch(tab) {
         if (savedView) savedView.style.display = 'block';
         if (sidebar) sidebar.style.display = 'none';
         renderSavedCards();
+    } else if (tab === 'tracker') {
+        if (trackerView) trackerView.style.display = 'block';
+        if (sidebar) sidebar.style.display = 'none';
+        renderTracker();
     } else if (tab === 'admin') {
         if (adminView) adminView.style.display = 'block';
         if (sidebar) sidebar.style.display = 'none';
@@ -1114,7 +1140,7 @@ function handleSubmit(e) {
     emptyState.style.display = 'none';
     resultsDashboard.style.display = 'flex';
 
-    updateGauge(risk.score);
+updateGauge(risk.score);
     updateCompletion(risk.compProb);
     updateVerdict(risk);
     updateProsCons(risk);
@@ -1123,6 +1149,9 @@ function handleSubmit(e) {
     updateRecs(risk.recommendations);
     updateLiveMetrics(data, risk);
     buildCharts(data, risk);
+
+    // Record this analysis in the progress tracker
+    trackAnalysisSnapshot(data, risk);
 }
 
 // ============================================
@@ -1672,6 +1701,311 @@ function renderSavedDetail(s) {
             ).join('')}</div>
         </div>
     `;
+}
+
+// ============================================
+// PROGRESS TRACKER & RISK FLAGS
+// ============================================
+async function trackAnalysisSnapshot(data, risk) {
+    const name = (data.name || 'Unnamed project').trim();
+    const spentRate = data.totalBudget > 0 ? (data.spentToDate / data.totalBudget * 100) : 0;
+    const snapshot = {
+        type: 'custom',
+        name,
+        data: {
+            name,
+            type: data.type,
+            category: getProjectTypeLabel(data.type),
+            status: risk.score <= 25 ? 'on-track' : risk.score <= 50 ? 'attention' : 'high-risk',
+            risk: risk.score,
+            score: risk.score,
+            level: risk.level,
+            compProb: risk.compProb,
+            completion: Math.round(data.completionRate) || 0,
+            totalBudget: data.totalBudget,
+            spentToDate: data.spentToDate,
+            spentPct: Math.round(spentRate * 100) / 100,
+            budgetVar: risk.factors.budgetVariance,
+        },
+    };
+    try {
+        const res = await api('/api/tracking', { method: 'POST', body: snapshot });
+        trackingEntries = await api('/api/tracking');
+        if (res.flags && res.flags.length) {
+            const crit = res.flags.find(f => f.level === 'critical');
+            const warn = res.flags.find(f => f.level === 'warning');
+            if (crit) showToast('\uD83D\uDEA8 Tracker: ' + crit.text);
+            else if (warn) showToast('\u26A0\uFE0F Tracker: ' + warn.text);
+        }
+    } catch (e) { /* tracking is best-effort */ }
+}
+
+function groupTracking(entries) {
+    const map = new Map();
+    for (const e of entries) {
+        const key = e.type + '\u0000' + e.name;
+        if (!map.has(key)) map.set(key, []);
+        map.get(key).push(e);
+    }
+    const out = [];
+    for (const list of map.values()) {
+        list.sort((a, b) => new Date(a.trackedAt) - new Date(b.trackedAt));
+        out.push({ key: list[0].type + '\u0000' + list[0].name, type: list[0].type, name: list[0].name, entries: list });
+    }
+    return out;
+}
+
+function snapshotScore(d) {
+    return d && d.risk != null ? d.risk : (d && d.score != null ? d.score : 0);
+}
+
+function sparklineHTML(values) {
+    if (!values || values.length === 0) return '';
+    const w = 120, h = 34, pad = 3;
+    const pts = values.map((v, i) => {
+        const x = values.length === 1 ? w / 2 : pad + (i / (values.length - 1)) * (w - 2 * pad);
+        const y = pad + (1 - Math.max(0, Math.min(100, v)) / 100) * (h - 2 * pad);
+        return x.toFixed(1) + ',' + y.toFixed(1);
+    }).join(' ');
+    const last = values[values.length - 1];
+    const color = last >= 75 ? '#ef4444' : last >= 50 ? '#f59e0b' : '#10b981';
+    return `<svg class="sparkline" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" aria-hidden="true"><polyline points="${pts}" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+}
+
+function renderTracker() {
+    trackerGroups = groupTracking(trackingEntries);
+    const custom = trackerGroups.filter(g => g.type === 'custom');
+    const real = trackerGroups.filter(g => g.type === 'realworld');
+    if (trackerCount) trackerCount.textContent = trackerGroups.length + ' tracked';
+    renderTrackerFlagsPanel();
+    renderTrackerGrid(trackerCustomGrid, custom);
+    renderTrackerGrid(trackerRealGrid, real);
+}
+
+function renderTrackerFlagsPanel() {
+    if (!trackerFlagsPanel) return;
+    const alerts = [];
+    const seen = new Set();
+    for (const g of trackerGroups) {
+        const latest = g.entries[g.entries.length - 1];
+        for (const f of latest.flags || []) {
+            if (f.level !== 'critical' && f.level !== 'warning') continue;
+            const key = g.name + '|' + f.text;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            alerts.push({ level: f.level, name: g.name, text: f.text });
+        }
+    }
+    alerts.sort((a, b) => (b.level === 'critical') - (a.level === 'critical'));
+
+    if (alerts.length === 0) {
+        trackerFlagsPanel.style.display = 'none';
+        return;
+    }
+    trackerFlagsPanel.style.display = 'block';
+    trackerFlagsPanel.innerHTML = `
+        <div class="tracker-flag-header">
+            <span class="tracker-flag-title">&#128681; Active Risk Flags</span>
+            <span class="section-tag">${alerts.length} alert${alerts.length === 1 ? '' : 's'}</span>
+        </div>
+        <div class="tracker-alerts">
+            ${alerts.slice(0, 12).map(a => `
+                <div class="tracker-alert ${a.level}">
+                    <span class="tracker-alert-name">${escapeHtml(a.name)}</span>
+                    <span class="tracker-alert-text">${escapeHtml(a.text)}</span>
+                </div>
+            `).join('')}
+        </div>`;
+}
+
+function renderTrackerGrid(grid, groups) {
+    if (!grid) return;
+    if (!groups.length) {
+        grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;color:var(--text-muted);padding:2.5rem;">' +
+            'No snapshots yet.</div>';
+        return;
+    }
+    grid.innerHTML = groups.map(g => trackerCardHTML(g)).join('');
+}
+
+function trackerCardHTML(g) {
+    const list = g.entries;
+    const latest = list[list.length - 1];
+    const prev = list.length > 1 ? list[list.length - 2] : null;
+    const d = latest.data;
+    const score = snapshotScore(d);
+    const trend = list.map(e => snapshotScore(e.data));
+    const prevScore = prev ? snapshotScore(prev.data) : null;
+    const riskDelta = prevScore != null ? score - prevScore : null;
+    const prevComp = prev ? (prev.data.completion || 0) : null;
+    const compDelta = prevComp != null ? (d.completion || 0) - prevComp : null;
+    const idx = trackerGroups.indexOf(g);
+
+    const flagsBadge = latest.flags && latest.flags.length
+        ? latest.flags.map(f => `<span class="track-flag ${f.level}">${flagIcon(f.level)} ${escapeHtml(f.text)}</span>`).join('')
+        : '';
+
+    const refId = g.type === 'realworld' && latest.refId != null ? latest.refId : null;
+    const statusText = d.status ? String(d.status).replace(/-/g, ' ').toUpperCase() : '';
+    const comp = Math.max(0, Math.min(100, d.completion || 0));
+
+    return `
+        <div class="db-card tracker-card track-${getStatusClass(score)}">
+            <div class="db-card-top">
+                <div class="db-card-heading">
+                    <span class="db-card-icon">${typeIcon(d.type)}</span>
+                    <div class="db-card-name">${escapeHtml(g.name)}</div>
+                </div>
+                <div class="db-card-risk ${getStatusClass(score)}">${score}</div>
+            </div>
+            <div class="db-card-category">${g.type === 'realworld' ? '\uD83C\uDDFE\uD83C\uDDF3 Real-world project' : '\uD83D\uDCCB Your analysis'}${d.category ? ' · ' + escapeHtml(d.category) : ''}</div>
+            <div class="tracker-trend">
+                <div class="tracker-spark">
+                    <span class="tracker-spark-label">Risk trend</span>
+                    ${sparklineHTML(trend)}
+                </div>
+                <div class="tracker-deltas">
+                    ${riskDelta != null ? `<span class="delta ${riskDelta > 0 ? 'bad' : riskDelta < 0 ? 'good' : 'flat'}">${riskDelta > 0 ? '▲' : riskDelta < 0 ? '▼' : '='} ${riskDelta > 0 ? '+' : ''}${riskDelta} risk</span>` : ''}
+                    ${compDelta != null ? `<span class="delta ${compDelta > 0 ? 'good' : compDelta < 0 ? 'bad' : 'flat'}">${compDelta > 0 ? '▲' : compDelta < 0 ? '▼' : '='} ${compDelta > 0 ? '+' : ''}${compDelta}% comp</span>` : ''}
+                    <span class="delta flat">${list.length} snapshot${list.length === 1 ? '' : 's'}</span>
+                </div>
+            </div>
+            <div class="db-card-progress">
+                <div class="db-progress-label">
+                    <span>${statusText}</span>
+                    <span>${comp}% complete</span>
+                </div>
+                <div class="db-progress-bar">
+                    <div class="db-progress-fill" style="width:${comp}%;background:${comp > 70 ? 'var(--green)' : comp > 40 ? 'var(--orange)' : 'var(--red)'};"></div>
+                </div>
+            </div>
+            ${flagsBadge ? `<div class="tracker-flags-list">${flagsBadge}</div>` : ''}
+            <div class="db-card-footer saved-footer">
+                <button class="mini-btn" onclick="viewTrackingDetail(${idx})">Details</button>
+                ${refId ? `<button class="mini-btn" onclick="openModal(${refId})">View Project</button>` : ''}
+                <button class="mini-btn danger" onclick="deleteTrackingEntry(${latest.id})">Delete Latest</button>
+            </div>
+        </div>`;
+}
+
+function flagIcon(level) {
+    return level === 'critical' ? '\uD83D\uDD34' : level === 'warning' ? '\u26A0\uFE0F' : level === 'success' ? '\u2705' : '\u2139\uFE0F';
+}
+
+function viewTrackingDetail(idx) {
+    const g = trackerGroups[idx];
+    if (!g) return;
+    modalContent.dataset.projectId = 'tracker-' + idx;
+    const list = g.entries;
+    const latest = list[list.length - 1];
+    const d = latest.data;
+    const score = snapshotScore(d);
+
+    const hist = list.map(e => {
+        const sd = e.data;
+        const s = snapshotScore(sd);
+        const st = sd.status ? String(sd.status).replace(/-/g, ' ').toUpperCase() : '--';
+        return `
+            <div class="tracker-hist-item">
+                <span class="tracker-hist-date">${formatSavedDate(e.trackedAt)}</span>
+                <span class="tracker-hist-score ${s >= 60 ? 'bad' : s >= 40 ? 'warn' : 'good'}">${s}</span>
+                <span class="tracker-hist-comp">${sd.completion || 0}%</span>
+                <span class="tracker-hist-status">${st}</span>
+            </div>`;
+    }).join('');
+
+    const flagsBadge = latest.flags && latest.flags.length
+        ? latest.flags.map(f => `<span class="track-flag ${f.level}">${flagIcon(f.level)} ${escapeHtml(f.text)}</span>`).join('')
+        : '<span style="color:var(--text-muted);font-size:0.82rem;">No flags on the latest snapshot.</span>';
+
+    const statsRows = g.type === 'custom'
+        ? `
+            <div class="saved-detail-row"><span class="saved-detail-key">Budget</span><span class="saved-detail-val">${formatMoney(d.totalBudget)}</span></div>
+            <div class="saved-detail-row"><span class="saved-detail-key">Spent to Date</span><span class="saved-detail-val">${formatMoney(d.spentToDate)}</span></div>
+            <div class="saved-detail-row"><span class="saved-detail-key">Completion Probability</span><span class="saved-detail-val">${d.compProb != null ? d.compProb + '%' : '--'}</span></div>`
+        : `
+            <div class="saved-detail-row"><span class="saved-detail-key">Budget</span><span class="saved-detail-val">${formatMoney(d.budget)}</span></div>
+            <div class="saved-detail-row"><span class="saved-detail-key">Spent</span><span class="saved-detail-val">${formatMoney(d.spent)}</span></div>
+            <div class="saved-detail-row"><span class="saved-detail-key">Timeline</span><span class="saved-detail-val">${d.timeline} months (${d.elapsed} elapsed)</span></div>`;
+
+    modalContent.innerHTML = `
+        <div class="modal-header">
+            <div class="modal-header-icon" style="background:var(--accent-bg);color:var(--accent);">${g.type === 'realworld' ? '\uD83C\uDDFE\uD83C\uDDF3' : typeIcon(d.type)}</div>
+            <div class="modal-header-info">
+                <h2>${escapeHtml(g.name)}</h2>
+                <div class="modal-subtitle">${g.type === 'realworld' ? 'Real-world government project tracker' : 'Custom analysis tracker'} \u00B7 ${list.length} snapshot${list.length === 1 ? '' : 's'}</div>
+                <div class="modal-header-badges">
+                    <span class="modal-badge risk-level-badge ${getStatusClass(score)}">${getLevel(score).toUpperCase()} RISK</span>
+                    <span class="modal-badge" style="background:var(--bg-tertiary);color:var(--text-secondary);">${score}/100</span>
+                </div>
+            </div>
+        </div>
+        <div class="modal-section">
+            <div class="modal-section-title"><span class="ms-icon">&#128200;</span> Progress History</div>
+            <div class="tracker-hist-table">
+                <div class="tracker-hist-head"><span>Snapshot</span><span>Risk</span><span>Completion</span><span>Status</span></div>
+                ${hist}
+            </div>
+        </div>
+        <div class="modal-section">
+            <div class="modal-section-title"><span class="ms-icon">&#128681;</span> Latest Risk Flags</div>
+            <div class="tracker-flags-list">${flagsBadge}</div>
+        </div>
+        <div class="modal-section">
+            <div class="modal-section-title"><span class="ms-icon">&#128176;</span> Latest Snapshot</div>
+            <div class="saved-detail-table">${statsRows}</div>
+        </div>
+        <div class="tracker-trend modal-trend">
+            <span class="tracker-spark-label">Risk trend over time</span>
+            ${sparklineHTML(list.map(e => snapshotScore(e.data)))}
+        </div>
+    `;
+
+    modalOverlay.classList.add('open');
+    document.body.style.overflow = 'hidden';
+}
+
+async function refreshTracking() {
+    try {
+        trackingEntries = await api('/api/tracking');
+    } catch (e) {
+        showToast('Could not load tracker data: ' + e.message);
+    }
+    renderTracker();
+}
+
+async function deleteTrackingEntry(id) {
+    if (!confirm('Delete this snapshot from the tracker?')) return;
+    try {
+        await api('/api/tracking/' + id, { method: 'DELETE' });
+        trackingEntries = trackingEntries.filter(x => x.id !== id);
+        renderTracker();
+        showToast('Snapshot deleted.');
+    } catch (e) {
+        showToast('Delete failed: ' + e.message);
+    }
+}
+
+async function clearTracking() {
+    if (!confirm('Delete ALL tracking history? This cannot be undone.')) return;
+    try {
+        await api('/api/tracking', { method: 'DELETE' });
+        trackingEntries = [];
+        renderTracker();
+        showToast('Tracking history cleared.');
+    } catch (e) {
+        showToast('Clear failed: ' + e.message);
+    }
+}
+
+async function syncRealProjects() {
+    try {
+        const res = await api('/api/tracking/sync', { method: 'POST' });
+        await refreshTracking();
+        showToast('\uD83D\uDD04 Snapshot taken for ' + res.count + ' real government projects.');
+    } catch (e) {
+        showToast('Sync failed: ' + e.message);
+    }
 }
 
 // ============================================

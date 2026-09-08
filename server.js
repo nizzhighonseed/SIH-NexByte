@@ -57,6 +57,16 @@ CREATE TABLE IF NOT EXISTS saved_projects (
     outputs TEXT NOT NULL,
     created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS tracking (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    type TEXT NOT NULL DEFAULT 'custom',
+    ref_id INTEGER DEFAULT NULL,
+    name TEXT NOT NULL,
+    data TEXT NOT NULL,
+    flags TEXT NOT NULL DEFAULT '[]',
+    created_at TEXT NOT NULL
+);
 `);
 
 // ----------------------------------------------------------------------------
@@ -147,6 +157,120 @@ function seedProjects(reset) {
         const project = (p && typeof p.id !== 'undefined') ? p : Object.assign({ id: arr.indexOf(p) + 1 }, p);
         insertProject(project, project.id);
     }
+}
+
+// ----------------------------------------------------------------------------
+// PROGRESS TRACKER  (per-user snapshots + automatic risk flags)
+// ----------------------------------------------------------------------------
+function getLevelFor(s) {
+    s = Number(s) || 0;
+    if (s <= 25) return 'low';
+    if (s <= 50) return 'medium';
+    if (s <= 75) return 'high';
+    return 'critical';
+}
+
+const STATUS_RANK = { 'on-track': 0, 'attention': 1, 'high-risk': 2, 'completed': 3 };
+
+function snapshotForProject(p) {
+    const spent = Number(p.spent) || 0;
+    const budget = Number(p.budget) || 0;
+    const risk = Number(p.risk) || 0;
+    return {
+        name: p.name,
+        type: p.type || (p.category || '').toLowerCase() || '',
+        category: p.category || '',
+        status: p.status || 'attention',
+        risk,
+        score: risk,
+        level: getLevelFor(risk),
+        completion: Number(p.completion) || 0,
+        budget,
+        spent,
+        timeline: Number(p.timeline) || 0,
+        elapsed: Number(p.elapsed) || 0,
+        spentPct: budget > 0 ? Math.round((spent / budget) * 10000) / 100 : 0,
+    };
+}
+
+// Compare a snapshot against the previous one and produce human-readable flags.
+function computeFlags(prevData, currData) {
+    const flags = [];
+    const riskOf = d => (d && d.risk != null ? d.risk : (d && d.score != null ? d.score : 0)) || 0;
+    const compOf = d => (d && d.completion) || 0;
+    const spentPctOf = d => (d && d.spentPct) || 0;
+    const statusOf = d => (d && d.status) || '';
+    const pRisk = riskOf(prevData);
+    const cRisk = riskOf(currData);
+
+    if (prevData) {
+        const d = cRisk - pRisk;
+        if (d >= 15) flags.push({ level: 'critical', text: 'Major risk surge (+' + d + ' points vs previous snapshot)' });
+        else if (d >= 5) flags.push({ level: 'warning', text: 'Risk escalating (+' + d + ' points since last snapshot)' });
+        else if (d <= -5) flags.push({ level: 'success', text: 'Risk improving (' + d + ' points since last snapshot)' });
+
+        const pComp = compOf(prevData);
+        const cComp = compOf(currData);
+        if (cComp < pComp) {
+            flags.push({ level: 'warning', text: 'Progress regression (completion dropped ' + pComp + '% -> ' + cComp + '%)' });
+        } else if (cComp - pComp >= 10) {
+            flags.push({ level: 'success', text: 'Strong progress (+' + (cComp - pComp) + '% completion since last snapshot)' });
+        }
+
+        const prevGap = spentPctOf(prevData) - pComp;
+        const currGap = spentPctOf(currData) - cComp;
+        if (currGap - prevGap >= 5) {
+            flags.push({ level: 'warning', text: 'Budget overrun widening (spend now runs ' + Math.round(currGap) + ' pts ahead of completion)' });
+        }
+
+        const pr = STATUS_RANK[statusOf(prevData)];
+        const cr = STATUS_RANK[statusOf(currData)];
+        if (cr != null && pr != null) {
+            if (cr > pr && statusOf(currData) !== 'completed') {
+                flags.push({ level: 'warning', text: 'Status downgraded: ' + statusOf(prevData) + ' -> ' + statusOf(currData) });
+            } else if (cr < pr) {
+                flags.push({ level: 'success', text: 'Status improved: ' + statusOf(prevData) + ' -> ' + statusOf(currData) });
+            }
+        }
+    }
+
+    if (cRisk >= 75) flags.push({ level: 'critical', text: 'Critical risk threshold (score ' + cRisk + '/100) - escalate to oversight committee' });
+    else if (cRisk >= 60) flags.push({ level: 'warning', text: 'High risk zone (score ' + cRisk + '/100) - monitor closely' });
+
+    const gap = spentPctOf(currData) - compOf(currData);
+    if (gap >= 15) flags.push({ level: 'warning', text: 'Budget overrun: spend is ' + Math.round(gap) + ' pts ahead of completion progress' });
+
+    if (!prevData) flags.push({ level: 'info', text: 'Baseline snapshot recorded. Keep updating to detect emerging risks.' });
+    return flags;
+}
+
+function lastSnapshot(userId, type, name) {
+    const row = db.prepare(
+        'SELECT data, created_at FROM tracking WHERE user_id = ? AND type = ? AND name = ? ORDER BY id DESC LIMIT 1'
+    ).get(userId, type, name);
+    return row ? JSON.parse(row.data) : null;
+}
+
+function insertSnapshot(userId, type, refId, name, data) {
+    const prev = lastSnapshot(userId, type, name);
+    const flags = computeFlags(prev, data);
+    const info = db.prepare(
+        'INSERT INTO tracking (user_id, type, ref_id, name, data, flags, created_at) VALUES (?,?,?,?,?,?,?)'
+    ).run(userId, type, refId, name, JSON.stringify(data), JSON.stringify(flags), new Date().toISOString());
+    return { id: Number(info.lastInsertRowid), flags };
+}
+
+// First time a user opens the tracker, seed a baseline snapshot of every real
+// government project so progress (risk / completion / budget) can be compared.
+function ensureProjectBaseline(userId) {
+    const { c } = db.prepare("SELECT COUNT(*) AS c FROM tracking WHERE user_id = ? AND type = 'realworld'").get(userId);
+    if (c > 0) return 0;
+    let count = 0;
+    for (const p of loadProjects()) {
+        insertSnapshot(userId, 'realworld', p.id, p.name, snapshotForProject(p));
+        count++;
+    }
+    return count;
 }
 
 // ----------------------------------------------------------------------------
@@ -367,6 +491,61 @@ const server = http.createServer(async (req, res) => {
                 if (!user) return sendJson(res, 401, { error: 'Sign in required' });
                 const info = db.prepare('DELETE FROM saved_projects WHERE id = ? AND user_id = ?').run(id, user.id);
                 if (info.changes === 0) return sendJson(res, 404, { error: 'Saved project not found' });
+                return sendJson(res, 200, { ok: true });
+            }
+        }
+
+        // ---------- Progress tracker API (per user) ----------
+        if (pathname === '/api/tracking' && method === 'GET') {
+            if (!user) return sendJson(res, 401, { error: 'Sign in required' });
+            ensureProjectBaseline(user.id);
+            const rows = db.prepare('SELECT * FROM tracking WHERE user_id = ? ORDER BY name, created_at').all(user.id);
+            return sendJson(res, 200, rows.map(r => ({
+                id: r.id,
+                type: r.type,
+                refId: r.ref_id,
+                name: r.name,
+                data: JSON.parse(r.data),
+                flags: JSON.parse(r.flags),
+                trackedAt: r.created_at,
+            })));
+        }
+
+        if (pathname === '/api/tracking' && method === 'POST') {
+            if (!user) return sendJson(res, 401, { error: 'Sign in required' });
+            let body;
+            try { body = await readBody(req); } catch (e) { return sendJson(res, 400, { error: e.message }); }
+            const name = String(body.name || '').trim();
+            const type = body.type === 'realworld' ? 'realworld' : 'custom';
+            const refId = body.refId != null ? Number(body.refId) : null;
+            const data = body.data && typeof body.data === 'object' ? body.data : null;
+            if (!name || !data) return sendJson(res, 400, { error: 'Project name and data are required' });
+            const saved = insertSnapshot(user.id, type, refId, name, data);
+            return sendJson(res, 201, saved);
+        }
+
+        if (pathname === '/api/tracking/sync' && method === 'POST') {
+            if (!user) return sendJson(res, 401, { error: 'Sign in required' });
+            let count = 0;
+            for (const p of loadProjects()) {
+                insertSnapshot(user.id, 'realworld', p.id, p.name, snapshotForProject(p));
+                count++;
+            }
+            return sendJson(res, 200, { count });
+        }
+
+        if (pathname === '/api/tracking' && method === 'DELETE') {
+            if (!user) return sendJson(res, 401, { error: 'Sign in required' });
+            db.prepare('DELETE FROM tracking WHERE user_id = ?').run(user.id);
+            return sendJson(res, 200, { ok: true });
+        }
+
+        if ((m = pathname.match(/^\/api\/tracking\/(\d+)$/))) {
+            const id = Number(m[1]);
+            if (method === 'DELETE') {
+                if (!user) return sendJson(res, 401, { error: 'Sign in required' });
+                const info = db.prepare('DELETE FROM tracking WHERE id = ? AND user_id = ?').run(id, user.id);
+                if (info.changes === 0) return sendJson(res, 404, { error: 'Tracking entry not found' });
                 return sendJson(res, 200, { ok: true });
             }
         }
