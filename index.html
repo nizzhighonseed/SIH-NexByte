@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GovRisk - Project Risk Intelligence</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+
+    <!-- Reusable national symbols (Tiranga-inspired) -->
+    <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+        <symbol id="ashoka-chakra" viewBox="0 0 48 48">
+            <g fill="none" stroke="currentColor">
+                <circle cx="24" cy="24" r="22"/>
+                <circle cx="24" cy="24" r="6.5" stroke-width="1.4"/>
+                <circle cx="24" cy="24" r="1.8" fill="currentColor"/>
+                <g stroke-width="1.1" stroke-linecap="round">
+                    <line x1="24" y1="17" x2="24" y2="3.5" transform="rotate(0 24 24)"/>
+                    <line x1="24" y1="17" x2="24" y2="3.5" transform="rotate(15 24 24)"/>
+                    <line x1="24" y1="17" x2="24" y2="3.5" transform="rotate(30 24 24)"/>
+                    <line x1="24" y1="17" x2="24" y2="3.5" transform="rotate(45 24 24)"/>
+                    <line x1="24" y1="17" x2="24" y2="3.5" transform="rotate(60 24 24)"/>
+                    <line x1="24" y1="17" x2="24" y2="3.5" transform="rotate(75 24 24)"/>
+                    <line x1="24" y1="17" x2="24" y2="3.5" transform="rotate(90 24 24)"/>
+                    <line x1="24" y1="17" x2="24" y2="3.5" transform="rotate(105 24 24)"/>
+                    <line x1="24" y1="17" x2="24" y2="3.5" transform="rotate(120 24 24)"/>
+                    <line x1="24" y1="17" x2="24" y2="3.5" transform="rotate(135 24 24)"/>
+                    <line x1="24" y1="17" x2="24" y2="3.5" transform="rotate(150 24 24)"/>
+                    <line x1="24" y1="17" x2="24" y2="3.5" transform="rotate(165 24 24)"/>
+                    <line x1="24" y1="17" x2="24" y2="3.5" transform="rotate(180 24 24)"/>
+                    <line x1="24" y1="17" x2="24" y2="3.5" transform="rotate(195 24 24)"/>
+                    <line x1="24" y1="17" x2="24" y2="3.5" transform="rotate(210 24 24)"/>
+                    <line x1="24" y1="17" x2="24" y2="3.5" transform="rotate(225 24 24)"/>
+                    <line x1="24" y1="17" x2="24" y2="3.5" transform="rotate(240 24 24)"/>
+                    <line x1="24" y1="17" x2="24" y2="3.5" transform="rotate(255 24 24)"/>
+                    <line x1="24" y1="17" x2="24" y2="3.5" transform="rotate(270 24 24)"/>
+                    <line x1="24" y1="17" x2="24" y2="3.5" transform="rotate(285 24 24)"/>
+                    <line x1="24" y1="17" x2="24" y2="3.5" transform="rotate(300 24 24)"/>
+                    <line x1="24" y1="17" x2="24" y2="3.5" transform="rotate(315 24 24)"/>
+                    <line x1="24" y1="17" x2="24" y2="3.5" transform="rotate(330 24 24)"/>
+                    <line x1="24" y1="17" x2="24" y2="3.5" transform="rotate(345 24 24)"/>
+                </g>
+            </g>
+        </symbol>
+    </svg>
+
+    <!-- Tiranga stripe -->
+    <div class="tricolor-bar" aria-hidden="true"></div>
+
+    <!-- Data load banner (shown if projects.json cannot be fetched) -->
+    <div id="dataLoadBanner" class="data-banner" style="display:none;" role="alert"></div>
+
+    <!-- Top Navigation Bar -->
+    <nav class="topbar">
+        <div class="topbar-left">
+            <div class="brand">
+                <span class="emblem-badge" title="State Emblem of India">
+                    <svg viewBox="0 0 100 92" aria-label="State Emblem of India" width="34" height="31">
+                        <g fill="#1a3a5e">
+                            <circle cx="50" cy="22" r="9"/>
+                            <circle cx="30" cy="24" r="6.5"/>
+                            <circle cx="70" cy="24" r="6.5"/>
+                            <path d="M50 0 h6 l-1 14 h-4 z" transform="translate(-1 8)"/>
+                            <rect x="46" y="58" width="8" height="20" rx="1"/>
+                            <rect x="16" y="43" width="68" height="8" rx="3"/>
+                            <circle cx="32" cy="47" r="1.8"/>
+                            <circle cx="68" cy="47" r="1.8"/>
+                        </g>
+                        <circle cx="50" cy="47" r="4.6" fill="none" stroke="#d4a017" stroke-width="1.6"/>
+                        <circle cx="50" cy="47" r="1.2" fill="#d4a017"/>
+                        <g fill="#ffefc2">
+                            <circle cx="50" cy="20.5" r="1.3"/>
+                            <circle cx="30" cy="22.5" r="1.1"/>
+                            <circle cx="70" cy="22.5" r="1.1"/>
+                        </g>
+                        <path d="M44 29 q6 4 12 0" stroke="#ffefc2" stroke-width="1.2" fill="none" stroke-linecap="round"/>
+                    </svg>
+                </span>
+                <div class="brand-text">
+                    <span class="brand-name">GovRisk<span class="brand-dot">.</span></span>
+                    <span class="brand-sub">&nbsp;भारत सरकार &middot; Government of India</span>
+                </div>
+            </div>
+            <div class="nav-tabs">
+                <button class="nav-tab active" data-tab="analyzer">Risk Analyzer</button>
+                <button class="nav-tab" data-tab="projects">Project Database</button>
+                <button class="nav-tab" data-tab="reports">Reports</button>
+                <button class="nav-tab" data-tab="saved">Saved Projects</button>
+            </div>
+        </div>
+        <div class="topbar-right">
+            <div class="currency-selector">
+                <label>Currency</label>
+                <select id="currencySelect">
+                    <option value="INR">&#8377; INR - Indian Rupee</option>
+                    <option value="USD">$ USD - US Dollar</option>
+                    <option value="EUR">&euro; EUR - Euro</option>
+                    <option value="GBP">&pound; GBP - British Pound</option>
+                    <option value="JPY">&yen; JPY - Japanese Yen</option>
+                    <option value="AED">AED - UAE Dirham</option>
+                    <option value="SGD">S$ SGD - Singapore Dollar</option>
+                </select>
+            </div>
+            <button class="theme-toggle" id="themeToggle" title="Toggle dark mode">
+                <span class="sun-icon">&#9728;</span>
+                <span class="moon-icon">&#9790;</span>
+            </button>
+            <div class="live-indicator">
+                <span class="live-dot"></span>
+                LIVE
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <div class="app-layout">
+
+        <!-- Sidebar: Input Panel -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <h2>Project Input</h2>
+                <button class="sidebar-collapse" id="sidebarCollapse">
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M10 3L5 8l5 5" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg>
+                </button>
+            </div>
+
+            <form id="riskForm" class="sidebar-form">
+
+                <!-- Section: Basic Info -->
+                <div class="form-section">
+                    <div class="section-title">
+                        <span class="section-icon">&#128203;</span> Basic Information
+                    </div>
+
+                    <div class="field">
+                        <label for="projectName">Project Name</label>
+                        <input type="text" id="projectName" placeholder="e.g., Mumbai-Ahmedabad High Speed Rail" required>
+                    </div>
+
+                    <div class="field">
+                        <label for="projectDesc">Project Description</label>
+                        <textarea id="projectDesc" rows="4" placeholder="Describe the project scope, type, location, key challenges... (used for AI risk prediction)"></textarea>
+                        <span class="field-hint">NLP analysis extracts risk indicators from description</span>
+                    </div>
+
+                    <div class="field">
+                        <label for="projectType">Project Category</label>
+                        <select id="projectType">
+                            <option value="infrastructure">Infrastructure / Roads / Bridges</option>
+                            <option value="railway">Railway / Metro / Transit</option>
+                            <option value="water">Water Supply / Irrigation</option>
+                            <option value="energy">Energy / Power Projects</option>
+                            <option value="housing">Housing / Urban Development</option>
+                            <option value="defense">Defense / Strategic</option>
+                            <option value="it">IT / Digital Infrastructure</option>
+                            <option value="health">Healthcare Facilities</option>
+                            <option value="education">Education Institutions</option>
+                            <option value="other">Other</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Section: Financials -->
+                <div class="form-section">
+                    <div class="section-title">
+                        <span class="section-icon">&#128176;</span> Financial Details
+                    </div>
+
+                    <div class="field">
+                        <label for="totalExpenditure">Total Sanctioned Budget</label>
+                        <div class="input-with-currency">
+                            <span class="currency-symbol" id="currencySymbol1">&#8377;</span>
+                            <input type="number" id="totalExpenditure" placeholder="e.g., 500000000" min="0" required>
+                        </div>
+                    </div>
+
+                    <div class="field">
+                        <label for="spentToDate">Expenditure to Date</label>
+                        <div class="input-with-currency">
+                            <span class="currency-symbol" id="currencySymbol2">&#8377;</span>
+                            <input type="number" id="spentToDate" placeholder="e.g., 200000000" min="0" required>
+                        </div>
+                    </div>
+
+                    <div class="field">
+                        <label for="fundSource">Funding Source</label>
+                        <select id="fundSource">
+                            <option value="central">Central Government</option>
+                            <option value="state">State Government</option>
+                            <option value="ppp">Public-Private Partnership</option>
+                            <option value="worldbank">World Bank / ADB Loan</option>
+                            <option value="internal">Internal Revenue</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Section: Timeline -->
+                <div class="form-section">
+                    <div class="section-title">
+                        <span class="section-icon">&#9201;</span> Timeline & Milestones
+                    </div>
+
+                    <div class="field-row">
+                        <div class="field">
+                            <label for="completionRate">Completion (%)</label>
+                            <input type="number" id="completionRate" placeholder="0-100" min="0" max="100" required>
+                        </div>
+                        <div class="field">
+                            <label for="buildTime">Total Duration (mo)</label>
+                            <input type="number" id="buildTime" placeholder="e.g., 36" min="1" required>
+                        </div>
+                    </div>
+
+                    <div class="field-row">
+                        <div class="field">
+                            <label for="milestonesCompleted">Milestones Done</label>
+                            <input type="number" id="milestonesCompleted" placeholder="e.g., 12" min="0" required>
+                        </div>
+                        <div class="field">
+                            <label for="totalMilestones">Total Milestones</label>
+                            <input type="number" id="totalMilestones" placeholder="e.g., 24" min="1" required>
+                        </div>
+                    </div>
+
+                    <div class="field">
+                        <label for="projectStartDate">Original Start Date</label>
+                        <input type="date" id="projectStartDate">
+                    </div>
+                </div>
+
+                <!-- Section: Resources -->
+                <div class="form-section">
+                    <div class="section-title">
+                        <span class="section-icon">&#128101;</span> Workforce & Resources
+                    </div>
+
+                    <div class="field">
+                        <label for="workforce">Workforce Size (people)</label>
+                        <input type="number" id="workforce" placeholder="e.g., 500" min="1" required>
+                    </div>
+
+                    <div class="field">
+                        <label for="resources">Resource Availability</label>
+                        <select id="resources" required>
+                            <option value="">Select level</option>
+                            <option value="scarce">Critical Shortage</option>
+                            <option value="limited">Below Requirements</option>
+                            <option value="adequate">Adequate</option>
+                            <option value="abundant">Fully Stocked</option>
+                        </select>
+                    </div>
+
+                    <div class="field">
+                        <label for="contractorCount">Active Contractors</label>
+                        <input type="number" id="contractorCount" placeholder="e.g., 5" min="1" value="1">
+                    </div>
+                </div>
+
+                <button type="submit" class="btn-analyze" id="analyzeBtn">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+                    Analyze Project Risk
+                </button>
+            </form>
+        </aside>
+
+        <!-- Main Results Area -->
+        <main class="content" id="content">
+
+            <!-- ============ PROJECT DATABASE VIEW ============ -->
+            <div class="db-view" id="dbView" style="display:none;">
+                <div class="db-topbar">
+                    <div class="db-topbar-left">
+                        <h2><span class="chakra-ic" title="Ashoka Chakra"><svg width="18" height="18"><use href="#ashoka-chakra"/></svg></span> Indian Government Project Database</h2>
+                        <span class="db-count" id="dbCount"></span>
+                    </div>
+                    <div class="db-search">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+                        <input type="text" id="dbSearch" placeholder="Search projects...">
+                    </div>
+                </div>
+                <div class="db-filters">
+                    <button class="filter-btn active" data-filter="all">All Projects</button>
+                    <button class="filter-btn" data-filter="railway">🚈 Railway / Metro</button>
+                    <button class="filter-btn" data-filter="infrastructure">🏗️ Infrastructure</button>
+                    <button class="filter-btn" data-filter="water">💧 Water / Irrigation</button>
+                    <button class="filter-btn" data-filter="energy">⚡ Energy / Power</button>
+                    <button class="filter-btn" data-filter="housing">🏙️ Housing / Urban</button>
+                    <button class="filter-btn" data-filter="it">💻 IT / Digital</button>
+                    <button class="filter-btn" data-filter="defense">🛡️ Defense</button>
+                    <button class="filter-btn" data-filter="health">🏥 Healthcare</button>
+                </div>
+                <div class="db-state-row">
+                    <span class="state-title">Filter by State:</span>
+                    <select id="dbStateFilter" class="state-select">
+                        <option value="all">All States / Pan-India</option>
+                    </select>
+                </div>
+                <div class="db-sort-bar">
+                    <span class="sort-label">Sort by:</span>
+                    <button class="sort-btn active" data-sort="risk-desc">Risk (High to Low)</button>
+                    <button class="sort-btn" data-sort="risk-asc">Risk (Low to High)</button>
+                    <button class="sort-btn" data-sort="budget-desc">Budget (Highest)</button>
+                    <button class="sort-btn" data-sort="completion-desc">Completion</button>
+                </div>
+                <div class="db-grid" id="dbGrid"></div>
+            </div>
+
+            <!-- ============ SAVED PROJECTS VIEW ============ -->
+            <div class="db-view" id="savedView" style="display:none;">
+                <div class="db-topbar">
+                    <div class="db-topbar-left">
+                        <h2><span class="chakra-ic" title="Ashoka Chakra"><svg width="18" height="18"><use href="#ashoka-chakra"/></svg></span> Saved Projects</h2>
+                        <span class="db-count" id="savedCount"></span>
+                    </div>
+                    <div class="db-topbar-actions">
+                        <button class="btn-secondary" id="exportAllBtn">Export All</button>
+                        <button class="btn-secondary danger" id="clearSavedBtn">Clear All</button>
+                    </div>
+                </div>
+                <div class="report-summary" style="margin-bottom:1.5rem;">
+                    <div style="font-size:0.95rem;color:var(--text-secondary);line-height:1.6;">
+                        Every analysis you save stores both the <strong>inputs</strong> and <strong>outputs</strong> in a
+                        separate, private database on this browser (localStorage). Reopen any saved snapshot, export it as JSON,
+                        or delete it at any time.
+                    </div>
+                </div>
+                <div class="db-grid" id="savedGrid"></div>
+            </div>
+
+            <!-- ============ PROJECT DETAIL MODAL ============ -->
+            <div class="modal-overlay" id="modalOverlay">
+                <div class="modal" id="projectModal">
+                    <button class="modal-close" id="modalClose">&times;</button>
+                    <div class="modal-content" id="modalContent"></div>
+                </div>
+            </div>
+
+            <!-- ============ RISK ANALYZER VIEW ============ -->
+            <div class="analyzer-view" id="analyzerView">
+
+            <!-- Empty State -->
+            <div class="empty-state" id="emptyState">
+                <div class="empty-icon">
+                    <svg width="88" height="88" class="chakra-spin" viewBox="0 0 48 48"><use href="#ashoka-chakra"/></svg>
+                </div>
+                <h3>Project Risk Intelligence</h3>
+                <p>Fill in the project details and click <strong>Analyze</strong> to get AI-powered risk assessment, completion probability, and actionable recommendations backed by real Indian government project data.</p>
+            </div>
+
+            <!-- Results Dashboard (hidden initially) -->
+            <div class="results-dashboard" id="resultsDashboard" style="display:none;">
+
+                <!-- Results toolbar -->
+                <div class="result-toolbar">
+                    <div class="result-toolbar-left">
+                        <span class="section-tag">Analysis Snapshot</span>
+                    </div>
+                    <div class="result-toolbar-right">
+                        <button class="btn-save" id="saveAnalysisBtn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> Save to Database</button>
+                    </div>
+                </div>
+
+                <!-- Top Row: Score + Probability + Completion -->
+                <div class="top-metrics">
+                    <div class="metric-card score-card">
+                        <div class="card-label">Overall Risk Score</div>
+                        <div class="risk-gauge-wrapper">
+                            <svg viewBox="0 0 200 120" class="gauge-svg">
+                                <defs>
+                                    <linearGradient id="gGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                                        <stop offset="0%" style="stop-color:#10b981"/>
+                                        <stop offset="40%" style="stop-color:#f59e0b"/>
+                                        <stop offset="75%" style="stop-color:#f97316"/>
+                                        <stop offset="100%" style="stop-color:#ef4444"/>
+                                    </linearGradient>
+                                </defs>
+                                <path d="M 20 100 A 80 80 0 0 1 180 100" fill="none" stroke="var(--gauge-bg)" stroke-width="14" stroke-linecap="round"/>
+                                <path d="M 20 100 A 80 80 0 0 1 180 100" fill="none" stroke="url(#gGrad)" stroke-width="14" stroke-linecap="round" id="gaugeArc" stroke-dasharray="251" stroke-dashoffset="251"/>
+                                <text x="100" y="80" text-anchor="middle" class="gauge-num" id="gaugeNum">--</text>
+                                <text x="100" y="100" text-anchor="middle" class="gauge-sub">out of 100</text>
+                            </svg>
+                        </div>
+                        <div class="risk-level-badge" id="riskLevelBadge">AWAITING INPUT</div>
+                    </div>
+
+                    <div class="metric-card prob-card">
+                        <div class="card-label">Completion Probability</div>
+                        <div class="big-number" id="compProbNum">--%</div>
+                        <div class="mini-progress">
+                            <div class="mini-progress-bar" id="compProbBar"></div>
+                        </div>
+                        <div class="card-desc" id="compProbDesc">Enter project details to calculate</div>
+                    </div>
+
+                    <div class="metric-card verdict-card">
+                        <div class="card-label">Project Verdict</div>
+                        <div class="verdict-icon" id="verdictIcon">?</div>
+                        <div class="verdict-text" id="verdictText">Pending Analysis</div>
+                        <div class="card-desc" id="verdictDesc">Awaiting data input</div>
+                    </div>
+                </div>
+
+                <!-- Comparison with Indian Projects -->
+                <div class="section-card comparison-section">
+                    <div class="section-header">
+                        <h3>&#128200; Benchmark Against Real Indian Government Projects</h3>
+                        <span class="section-tag">Live Comparison</span>
+                    </div>
+                    <div class="comparison-grid" id="comparisonGrid">
+                        <!-- Filled by JS -->
+                    </div>
+                </div>
+
+                <!-- Pros / Cons / AI Insights -->
+                <div class="section-card">
+                    <div class="section-header">
+                        <h3>&#129504; AI-Powered Risk Intelligence</h3>
+                        <span class="section-tag">NLP Analysis</span>
+                    </div>
+                    <div class="intel-grid">
+                        <div class="intel-box pros-box">
+                            <div class="intel-title"><span class="dot green"></span> Strengths</div>
+                            <ul id="prosList"></ul>
+                        </div>
+                        <div class="intel-box cons-box">
+                            <div class="intel-title"><span class="dot red"></span> Risk Factors</div>
+                            <ul id="consList"></ul>
+                        </div>
+                        <div class="intel-box insights-box">
+                            <div class="intel-title"><span class="dot blue"></span> Description Insights</div>
+                            <ul id="descInsights"></ul>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Charts Row -->
+                <div class="charts-row">
+                    <div class="section-card chart-card">
+                        <div class="section-header">
+                            <h3>&#128202; Budget Analysis</h3>
+                        </div>
+                        <canvas id="budgetChart"></canvas>
+                    </div>
+                    <div class="section-card chart-card">
+                        <div class="section-header">
+                            <h3>&#127919; Risk Factor Breakdown</h3>
+                        </div>
+                        <canvas id="riskRadar"></canvas>
+                    </div>
+                    <div class="section-card chart-card">
+                        <div class="section-header">
+                            <h3>&#128197; Timeline Projection</h3>
+                        </div>
+                        <canvas id="timelineChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Recommendations -->
+                <div class="section-card">
+                    <div class="section-header">
+                        <h3>&#128736; Actionable Recommendations</h3>
+                        <span class="section-tag">Priority Ranked</span>
+                    </div>
+                    <div id="recsList" class="recs-grid"></div>
+                </div>
+
+                <!-- Real-time Live Metrics -->
+                <div class="section-card">
+                    <div class="section-header">
+                        <h3>&#9889; Real-Time Project Metrics</h3>
+                        <span class="section-tag live-tag"><span class="live-dot-sm"></span> Streaming</span>
+                    </div>
+                    <div class="live-metrics-grid">
+                        <div class="live-metric">
+                            <div class="lm-icon">&#128176;</div>
+                            <div class="lm-info">
+                                <span class="lm-label">Burn Rate</span>
+                                <span class="lm-value" id="lmBurn">--</span>
+                            </div>
+                        </div>
+                        <div class="live-metric">
+                            <div class="lm-icon">&#9201;</div>
+                            <div class="lm-info">
+                                <span class="lm-label">Schedule Variance</span>
+                                <span class="lm-value" id="lmSchedule">--</span>
+                            </div>
+                        </div>
+                        <div class="live-metric">
+                            <div class="lm-icon">&#128101;</div>
+                            <div class="lm-info">
+                                <span class="lm-label">CPI (Cost Perf.)</span>
+                                <span class="lm-value" id="lmCPI">--</span>
+                            </div>
+                        </div>
+                        <div class="live-metric">
+                            <div class="lm-icon">&#128170;</div>
+                            <div class="lm-info">
+                                <span class="lm-label">SPI (Schedule Perf.)</span>
+                                <span class="lm-value" id="lmSPI">--</span>
+                            </div>
+                        </div>
+                        <div class="live-metric">
+                            <div class="lm-icon">&#128230;</div>
+                            <div class="lm-info">
+                                <span class="lm-label">Resource Util.</span>
+                                <span class="lm-value" id="lmResource">--</span>
+                            </div>
+                        </div>
+                        <div class="live-metric">
+                            <div class="lm-icon">&#128176;</div>
+                            <div class="lm-info">
+                                <span class="lm-label">Est. at Completion</span>
+                                <span class="lm-value" id="lmEAC">--</span>
+                            </div>
+                        </div>
+                        <div class="live-metric">
+                            <div class="lm-icon">&#128165;</div>
+                            <div class="lm-info">
+                                <span class="lm-label">Variance at Completion</span>
+                                <span class="lm-value" id="lmVAC">--</span>
+                            </div>
+                        </div>
+                        <div class="live-metric">
+                            <div class="lm-icon">&#128200;</div>
+                            <div class="lm-info">
+                                <span class="lm-label">To-Complete Perf.</span>
+                                <span class="lm-value" id="lmTCPI">--</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+            </div><!-- end analyzer-view -->
+        </main>
+    </div>
+
+    <footer class="gov-footer">
+        <span class="footer-chakra"><svg width="14" height="14"><use href="#ashoka-chakra"/></svg></span>
+        <span>Governance intelligence for public infrastructure &middot; <strong>भारत सरकार &middot; Government of India</strong></span>
+        <span class="footer-tricolor" aria-hidden="true"></span>
+    </footer>
+
+    <!-- Mobile: floating button to reopen hidden sidebar -->
+    <button class="floating-input-btn" id="floatingInputBtn" title="Show project inputs" aria-label="Show project inputs">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+        <span>Edit Inputs</span>
+    </button>
+
+    <script src="app.js"></script>
+</body>
+</html>
