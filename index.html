@@ -89,9 +89,15 @@
                 <button class="nav-tab" data-tab="projects">Project Database</button>
                 <button class="nav-tab" data-tab="reports">Reports</button>
                 <button class="nav-tab" data-tab="saved">Saved Projects</button>
+                <button class="nav-tab" id="adminTab" data-tab="admin" style="display:none;">&#128295; Admin</button>
             </div>
         </div>
         <div class="topbar-right">
+            <div class="user-chip" id="userChip" style="display:none;">
+                <span class="user-avatar" aria-hidden="true">&#128100;</span>
+                <span class="user-name" id="userDisplayName"></span>
+                <button class="logout-btn" id="logoutBtn" title="Sign out">&#10005;</button>
+            </div>
             <div class="currency-selector">
                 <label>Currency</label>
                 <select id="currencySelect">
@@ -323,11 +329,151 @@
                 <div class="report-summary" style="margin-bottom:1.5rem;">
                     <div style="font-size:0.95rem;color:var(--text-secondary);line-height:1.6;">
                         Every analysis you save stores both the <strong>inputs</strong> and <strong>outputs</strong> in a
-                        separate, private database on this browser (localStorage). Reopen any saved snapshot, export it as JSON,
-                        or delete it at any time.
+                        per-user database on the server. Reopen any saved snapshot, export it as JSON,
+                        or delete it at any time. Your saved projects are private to your account.
                     </div>
                 </div>
                 <div class="db-grid" id="savedGrid"></div>
+            </div>
+
+            <!-- ============ ADMIN VIEW ============ -->
+            <div class="db-view" id="adminView" style="display:none;">
+                <div class="db-topbar">
+                    <div class="db-topbar-left">
+                        <h2>&#128295; Admin - Project Database</h2>
+                        <span class="db-count" id="adminCount"></span>
+                    </div>
+                    <div class="db-topbar-actions">
+                        <button class="btn-secondary" id="adminSeedBtn" title="Re-import all projects from projects.json">Re-seed from projects.json</button>
+                    </div>
+                </div>
+
+                <div class="admin-form-card" id="adminFormCard">
+                    <div class="section-header">
+                        <h3 id="adminFormTitle">Add New Project</h3>
+                        <button class="btn-secondary" id="adminCancelBtn" style="display:none;">Cancel Edit</button>
+                    </div>
+                    <div class="admin-form-grid">
+                        <div class="field adm-wide">
+                            <label for="admName">Project Name *</label>
+                            <input type="text" id="admName" placeholder="e.g., Mumbai-Ahmedabad High Speed Rail Constructions Ltd">
+                        </div>
+                        <div class="field">
+                            <label for="admType">Category</label>
+                            <select id="admType">
+                                <option value="railway">Railway / Metro / Transit</option>
+                                <option value="infrastructure">Infrastructure / Roads / Bridges</option>
+                                <option value="water">Water Supply / Irrigation</option>
+                                <option value="energy">Energy / Power Projects</option>
+                                <option value="housing">Housing / Urban Development</option>
+                                <option value="defense">Defense / Strategic</option>
+                                <option value="it">IT / Digital Infrastructure</option>
+                                <option value="health">Healthcare Facilities</option>
+                                <option value="education">Education Institutions</option>
+                                <option value="other">Other</option>
+                            </select>
+                        </div>
+                        <div class="field">
+                            <label for="admStatus">Status</label>
+                            <select id="admStatus">
+                                <option value="attention">Attention</option>
+                                <option value="on-track">On Track</option>
+                                <option value="high-risk">High Risk</option>
+                                <option value="completed">Completed</option>
+                            </select>
+                        </div>
+                        <div class="field">
+                            <label for="admState">State(s)</label>
+                            <input type="text" id="admState" placeholder="e.g., Gujarat, Maharashtra">
+                        </div>
+                        <div class="field">
+                            <label for="admLocation">Location</label>
+                            <input type="text" id="admLocation" placeholder="e.g., Maharashtra &amp; Gujarat">
+                        </div>
+                        <div class="field">
+                            <label for="admAgency">Agency</label>
+                            <input type="text" id="admAgency" placeholder="e.g., NHSRCL">
+                        </div>
+                        <div class="field adm-wide">
+                            <label for="admFunding">Funding</label>
+                            <input type="text" id="admFunding" placeholder="e.g., JICA loan + Indian Government">
+                        </div>
+                        <div class="field">
+                            <label for="admBudget">Budget (INR)</label>
+                            <input type="number" id="admBudget" min="0" placeholder="110000000000">
+                        </div>
+                        <div class="field">
+                            <label for="admSpent">Spent (INR)</label>
+                            <input type="number" id="admSpent" min="0" placeholder="42000000000">
+                        </div>
+                        <div class="field">
+                            <label for="admRisk">Risk Score (0-100)</label>
+                            <input type="number" id="admRisk" min="0" max="100" placeholder="78">
+                        </div>
+                        <div class="field">
+                            <label for="admCompletion">Completion (%)</label>
+                            <input type="number" id="admCompletion" min="0" max="100" placeholder="35">
+                        </div>
+                        <div class="field">
+                            <label for="admTimeline">Timeline (months)</label>
+                            <input type="number" id="admTimeline" min="1" placeholder="120">
+                        </div>
+                        <div class="field">
+                            <label for="admElapsed">Elapsed (months)</label>
+                            <input type="number" id="admElapsed" min="0" placeholder="42">
+                        </div>
+                        <div class="field">
+                            <label for="admWorkforce">Workforce</label>
+                            <input type="number" id="admWorkforce" min="0" placeholder="8600">
+                        </div>
+                        <div class="field">
+                            <label for="admStartDate">Start Year/Date</label>
+                            <input type="text" id="admStartDate" placeholder="2017">
+                        </div>
+                        <div class="field">
+                            <label for="admRevisedDate">Revised Year/Date</label>
+                            <input type="text" id="admRevisedDate" placeholder="2031">
+                        </div>
+                        <div class="field">
+                            <label for="admOriginalDeadline">Original Deadline</label>
+                            <input type="text" id="admOriginalDeadline" placeholder="2023">
+                        </div>
+                        <div class="field">
+                            <label for="admContractors">Contractors (one per line)</label>
+                            <textarea id="admContractors" rows="3" placeholder="L&T&#10;Afcons Infrastructure"></textarea>
+                        </div>
+                        <div class="field adm-wide">
+                            <label for="admDescription">Description</label>
+                            <textarea id="admDescription" rows="4" placeholder="Describe project scope, type, location, key challenges..."></textarea>
+                        </div>
+                        <div class="field">
+                            <label for="admKeyRisks">Key Risks (severity|text per line)</label>
+                            <textarea id="admKeyRisks" rows="3" placeholder="critical|Land acquisition disputes&#10;high|Cost escalation"></textarea>
+                        </div>
+                        <div class="field">
+                            <label for="admStrengths">Strengths (one per line)</label>
+                            <textarea id="admStrengths" rows="3" placeholder="Proven technology record"></textarea>
+                        </div>
+                        <div class="field">
+                            <label for="admWeaknesses">Weaknesses (one per line)</label>
+                            <textarea id="admWeaknesses" rows="3" placeholder="Complex terrain"></textarea>
+                        </div>
+                        <div class="field">
+                            <label for="admLessons">Lessons (one per line)</label>
+                            <textarea id="admLessons" rows="3" placeholder="Early land acquisition planning is critical"></textarea>
+                        </div>
+                        <div class="field adm-wide">
+                            <label for="admTimelineEvents">Timeline Events (JSON array, optional)</label>
+                            <textarea id="admTimelineEvents" rows="3" placeholder='[{"year":"2017","title":"Ground breaking","desc":"...","status":"done"}]'></textarea>
+                            <span class="field-hint">Optional advanced field. Leave blank if you don't need timeline events.</span>
+                        </div>
+                    </div>
+                    <div class="admin-form-actions">
+                        <button class="btn-analyze" id="adminSaveBtn" type="button">Save Project</button>
+                    </div>
+                </div>
+
+                <div class="db-grid" id="adminGrid"></div>
             </div>
 
             <!-- ============ PROJECT DETAIL MODAL ============ -->

@@ -77,7 +77,9 @@ let dbCurrentSort = 'risk-desc';
 let modalChart = null;
 let lastAnalysis = null;
 
-const SAVED_KEY = 'govrisk-saved-projects';
+let currentUser = null;
+let savedProjects = [];
+let editingProjectId = null;
 
 function typeIcon(type) {
     const icons = {
@@ -120,42 +122,76 @@ const dbStateFilter = document.getElementById('dbStateFilter');
 const savedView = document.getElementById('savedView');
 const savedGrid = document.getElementById('savedGrid');
 const savedCount = document.getElementById('savedCount');
+const adminView = document.getElementById('adminView');
+const adminGrid = document.getElementById('adminGrid');
+const adminCount = document.getElementById('adminCount');
+const adminFormCard = document.getElementById('adminFormCard');
 
 let dbCurrentState = 'all';
 
 // ============================================
-// DATA LOADER (projects.json)
+// API HELPER + DATA LOADER (server-backed DB)
 // ============================================
+async function api(path, options) {
+    const opts = Object.assign({ method: 'GET', headers: {} }, options || {});
+    if (opts.body && typeof opts.body !== 'string') {
+        opts.body = JSON.stringify(opts.body);
+        opts.headers['Content-Type'] = 'application/json';
+    }
+    const res = await fetch(path, Object.assign({ credentials: 'same-origin' }, opts));
+    let data = null;
+    try { data = await res.json(); } catch (e) { /* no body */ }
+    if (!res.ok) {
+        const msg = (data && data.error) ? data.error : 'HTTP ' + res.status;
+        const err = new Error(msg);
+        err.status = res.status;
+        throw err;
+    }
+    return data;
+}
+
 async function loadProjectData() {
-    const res = await fetch('projects.json', { cache: 'no-store' });
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    return res.json();
+    return api('/api/projects');
 }
 
 function showDataLoadError(err) {
-    const isFile = location.protocol === 'file:';
     const banner = document.getElementById('dataLoadBanner');
     if (!banner) return;
     banner.style.display = 'block';
     banner.innerHTML =
         '<strong>Project database could not be loaded.</strong> ' +
-        (isFile
-            ? 'Browsers block reading local <code>projects.json</code> when <code>index.html</code> is opened directly (file://). ' +
-              'Double-click <code>start-server.bat</code> in the app folder and use the page it opens, ' +
-              'or run <code>node server.js</code> inside the folder.'
-            : (err && err.message ? 'Error: ' + err.message : 'Missing or malformed projects.json next to index.html.'));
+        (err && err.message ? ' Error: ' + err.message : ' Is the server running?');
 }
 
 // ============================================
 // INIT
 // ============================================
 document.addEventListener('DOMContentLoaded', async () => {
-    // Load project data from projects.json before rendering
+    // ---- Auth gate: must be signed in ----
+    let me = null;
+    try {
+        me = await api('/api/auth/me');
+    } catch (err) {
+        window.location.href = '/login';
+        return;
+    }
+    currentUser = me.user;
+    initUserChip(currentUser);
+    showAdminTab(currentUser);
+
+    // Load project data from the server database
     try {
         INDIA_PROJECT_DB = await loadProjectData();
     } catch (err) {
-        console.error('Failed to load projects.json:', err);
+        console.error('Failed to load projects:', err);
         showDataLoadError(err);
+    }
+
+    // Load this user's saved analyses
+    try {
+        savedProjects = await api('/api/saved');
+    } catch (err) {
+        savedProjects = [];
     }
 
     // Theme
@@ -181,6 +217,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         updateCurrencySymbols(currentCurrency);
     });
     form.addEventListener('submit', handleSubmit);
+    const logoutBtn = document.getElementById('logoutBtn');
+    if (logoutBtn) logoutBtn.addEventListener('click', handleLogout);
 
     // Nav tabs
     document.querySelectorAll('.nav-tab').forEach(tab => {
@@ -191,7 +229,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     });
 
-// Database view controls
+    // Database view controls
     dbSearch.addEventListener('input', renderDbCards);
     document.querySelectorAll('.filter-btn').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -236,6 +274,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     const exportAllBtn = document.getElementById('exportAllBtn');
     if (exportAllBtn) exportAllBtn.addEventListener('click', () => exportSaved(null));
 
+    // Admin controls
+    const adminSaveBtn = document.getElementById('adminSaveBtn');
+    if (adminSaveBtn) adminSaveBtn.addEventListener('click', adminSubmit);
+    const adminCancelBtn = document.getElementById('adminCancelBtn');
+    if (adminCancelBtn) adminCancelBtn.addEventListener('click', adminResetForm);
+    const adminSeedBtn = document.getElementById('adminSeedBtn');
+    if (adminSeedBtn) adminSeedBtn.addEventListener('click', adminSeed);
+
     // Mobile sidebar collapse toggle
     const collapseBtn = document.getElementById('sidebarCollapse');
     const floatingInputBtn = document.getElementById('floatingInputBtn');
@@ -257,10 +303,30 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 
 // ============================================
+// USER SESSION UI
+// ============================================
+function initUserChip(user) {
+    const chip = document.getElementById('userChip');
+    if (!chip) return;
+    chip.style.display = 'flex';
+    const nameEl = document.getElementById('userDisplayName');
+    if (nameEl) nameEl.textContent = user.username + (user.role === 'admin' ? ' ★' : '');
+    chip.title = 'Signed in as ' + user.username + ' (' + user.role + ')';
+}
+
+async function handleLogout() {
+    try {
+        await api('/api/auth/logout', { method: 'POST' });
+    } catch (e) { /* ignore */ }
+    window.location.href = '/login';
+}
+
+// ============================================
 // STATE FILTER
 // ============================================
 function populateStateFilter() {
     if (!dbStateFilter) return;
+    dbStateFilter.options.length = 1;
     const states = new Set();
     INDIA_PROJECT_DB.forEach(p => {
         if (p.state) {
@@ -294,6 +360,8 @@ function handleTabSwitch(tab) {
     if (reportsView) reportsView.style.display = 'none';
     // Hide saved view if exists
     if (savedView) savedView.style.display = 'none';
+    // Hide admin view if exists
+    if (adminView) adminView.style.display = 'none';
 
     if (tab === 'analyzer') {
         analyzerView.style.display = 'block';
@@ -313,6 +381,10 @@ function handleTabSwitch(tab) {
         if (savedView) savedView.style.display = 'block';
         if (sidebar) sidebar.style.display = 'none';
         renderSavedCards();
+    } else if (tab === 'admin') {
+        if (adminView) adminView.style.display = 'block';
+        if (sidebar) sidebar.style.display = 'none';
+        renderAdminList();
     }
 }
 
@@ -1352,23 +1424,15 @@ function buildCharts(data, risk) {
 }
 
 // ============================================
-// SAVED PROJECTS DATABASE (localStorage)
+// SAVED PROJECTS (per-user, server database)
 // ============================================
-function getSavedProjects() {
+async function refreshSaved() {
     try {
-        const raw = localStorage.getItem(SAVED_KEY);
-        return raw ? JSON.parse(raw) : [];
+        savedProjects = await api('/api/saved');
     } catch (e) {
-        return [];
+        showToast('Could not load saved projects: ' + e.message);
     }
-}
-
-function persistSavedProjects(list) {
-    try {
-        localStorage.setItem(SAVED_KEY, JSON.stringify(list));
-    } catch (e) {
-        showToast('Could not save - storage is full or blocked.');
-    }
+    renderSavedCards();
 }
 
 function saveCurrentAnalysis() {
@@ -1379,8 +1443,6 @@ function saveCurrentAnalysis() {
     }
     const { data, risk } = lastAnalysis;
     const snapshot = {
-        id: 'saved-' + Date.now(),
-        savedAt: new Date().toISOString(),
         type: data.type,
         project: {
             name: data.name,
@@ -1409,11 +1471,12 @@ function saveCurrentAnalysis() {
             factors: risk.factors,
         },
     };
-    const list = getSavedProjects();
-    list.unshift(snapshot);
-    persistSavedProjects(list);
-    renderSavedCards();
-    showToast('Analysis saved to Saved Projects.');
+    api('/api/saved', { method: 'POST', body: snapshot })
+        .then(() => {
+            refreshSaved();
+            showToast('Analysis saved to your account.');
+        })
+        .catch(err => showToast('Save failed: ' + err.message));
 }
 
 function formatSavedDate(iso) {
@@ -1424,9 +1487,9 @@ function formatSavedDate(iso) {
 }
 
 function renderSavedCards() {
-    if (savedCount) savedCount.textContent = getSavedProjects().length + ' saved';
+    if (savedCount) savedCount.textContent = savedProjects.length + ' saved';
     if (!savedGrid) return;
-    const list = getSavedProjects();
+    const list = savedProjects;
 
     if (list.length === 0) {
         savedGrid.innerHTML = '<div style="grid-column:1/-1;text-align:center;color:var(--text-muted);padding:3rem;">' +
@@ -1465,16 +1528,16 @@ function renderSavedCards() {
                 </div>
             </div>
             <div class="db-card-footer saved-footer">
-                <button class="mini-btn" onclick="viewSaved('${s.id}')">View</button>
-                <button class="mini-btn" onclick="exportSaved('${s.id}')">Export</button>
-                <button class="mini-btn danger" onclick="deleteSaved('${s.id}')">Delete</button>
+                <button class="mini-btn" onclick="viewSaved(${s.id})">View</button>
+                <button class="mini-btn" onclick="exportSaved(${s.id})">Export</button>
+                <button class="mini-btn danger" onclick="deleteSaved(${s.id})">Delete</button>
             </div>
         </div>
     `).join('');
 }
 
 function viewSaved(id) {
-    const s = getSavedProjects().find(x => x.id === id);
+    const s = savedProjects.find(x => x.id === id);
     if (!s) return;
     modalContent.dataset.projectId = 'saved-' + s.id;
     renderSavedDetail(s);
@@ -1482,22 +1545,32 @@ function viewSaved(id) {
     document.body.style.overflow = 'hidden';
 }
 
-function deleteSaved(id) {
-    const list = getSavedProjects().filter(x => x.id !== id);
-    persistSavedProjects(list);
-    renderSavedCards();
-    showToast('Saved project deleted.');
+async function deleteSaved(id) {
+    if (!confirm('Delete this saved project?')) return;
+    try {
+        await api('/api/saved/' + id, { method: 'DELETE' });
+        savedProjects = savedProjects.filter(x => x.id !== id);
+        renderSavedCards();
+        showToast('Saved project deleted.');
+    } catch (e) {
+        showToast('Delete failed: ' + e.message);
+    }
 }
 
-function clearSaved() {
+async function clearSaved() {
     if (!confirm('Delete all saved projects? This cannot be undone.')) return;
-    persistSavedProjects([]);
-    renderSavedCards();
-    showToast('All saved projects cleared.');
+    try {
+        await api('/api/saved', { method: 'DELETE' });
+        savedProjects = [];
+        renderSavedCards();
+        showToast('All saved projects cleared.');
+    } catch (e) {
+        showToast('Clear failed: ' + e.message);
+    }
 }
 
 function exportSaved(id) {
-    const list = id ? getSavedProjects().filter(x => x.id === id) : getSavedProjects();
+    const list = id ? savedProjects.filter(x => x.id === id) : savedProjects;
     if (list.length === 0) {
         showToast('Nothing to export.');
         return;
@@ -1599,6 +1672,252 @@ function renderSavedDetail(s) {
             ).join('')}</div>
         </div>
     `;
+}
+
+// ============================================
+// ADMIN - PROJECT DATABASE CONTROLS
+// ============================================
+function showAdminTab(user) {
+    const tab = document.getElementById('adminTab');
+    if (tab) tab.style.display = (user && user.role === 'admin') ? '' : 'none';
+}
+
+const ADMIN_TYPE_LABELS = {
+    infrastructure: 'Infrastructure', railway: 'Railway/Metro', water: 'Water/Irrigation',
+    energy: 'Energy/Power', housing: 'Housing/Urban', defense: 'Defense',
+    it: 'IT/Digital', health: 'Healthcare', education: 'Education', other: 'Other',
+};
+
+function adminVal(id) {
+    const el = document.getElementById(id);
+    return el ? el.value.trim() : '';
+}
+
+function adminNum(id) {
+    const v = parseFloat(document.getElementById(id).value);
+    return isNaN(v) ? 0 : v;
+}
+
+function adminInt(id) {
+    const v = parseInt(document.getElementById(id).value, 10);
+    return isNaN(v) ? 0 : v;
+}
+
+function adminLines(id) {
+    return adminVal(id).split('\n').map(s => s.trim()).filter(Boolean);
+}
+
+function adminSet(id, value) {
+    const el = document.getElementById(id);
+    if (el) el.value = (value == null) ? '' : String(value);
+}
+
+function adminResetForm() {
+    editingProjectId = null;
+    const ids = [
+        'admName', 'admType', 'admStatus', 'admState', 'admLocation', 'admAgency', 'admFunding',
+        'admBudget', 'admSpent', 'admRisk', 'admCompletion', 'admTimeline', 'admElapsed',
+        'admWorkforce', 'admStartDate', 'admRevisedDate', 'admOriginalDeadline',
+        'admContractors', 'admDescription', 'admKeyRisks', 'admStrengths', 'admWeaknesses',
+        'admLessons', 'admTimelineEvents',
+    ];
+    ids.forEach(id => adminSet(id, ''));
+    const title = document.getElementById('adminFormTitle');
+    if (title) title.textContent = 'Add New Project';
+    const cancelBtn = document.getElementById('adminCancelBtn');
+    if (cancelBtn) cancelBtn.style.display = 'none';
+}
+
+function adminBuildFromForm() {
+    const keyRisks = adminLines('admKeyRisks').map(line => {
+        const parts = line.split('|');
+        const severity = parts.length > 1 ? parts[0].trim().toLowerCase() : 'medium';
+        const text = parts.length > 1 ? parts.slice(1).join('|').trim() : line.trim();
+        return {
+            text,
+            severity: ['critical', 'high', 'medium', 'low'].includes(severity) ? severity : 'medium',
+        };
+    });
+    let timelineEvents = [];
+    const te = adminVal('admTimelineEvents');
+    if (te) {
+        try { timelineEvents = JSON.parse(te); } catch (e) { timelineEvents = []; }
+    }
+    const type = adminVal('admType') || 'other';
+    return {
+        id: editingProjectId !== null ? editingProjectId : null,
+        name: adminVal('admName'),
+        shortName: '',
+        type,
+        state: adminVal('admState'),
+        budget: adminNum('admBudget'),
+        spent: adminNum('admSpent'),
+        risk: adminInt('admRisk'),
+        completion: adminInt('admCompletion'),
+        timeline: adminInt('admTimeline'),
+        elapsed: adminInt('admElapsed'),
+        category: ADMIN_TYPE_LABELS[type] || 'Other',
+        status: adminVal('admStatus') || 'attention',
+        agency: adminVal('admAgency'),
+        location: adminVal('admLocation'),
+        funding: adminVal('admFunding'),
+        workforce: adminInt('admWorkforce'),
+        contractors: adminLines('admContractors'),
+        description: adminVal('admDescription'),
+        startDate: adminVal('admStartDate'),
+        revisedDate: adminVal('admRevisedDate'),
+        originalDeadline: adminVal('admOriginalDeadline'),
+        keyRisks,
+        strengths: adminLines('admStrengths'),
+        weaknesses: adminLines('admWeaknesses'),
+        lessons: adminLines('admLessons'),
+        timeline_events: timelineEvents,
+    };
+}
+
+async function reloadProjects() {
+    try {
+        INDIA_PROJECT_DB = await loadProjectData();
+    } catch (err) {
+        showDataLoadError(err);
+    }
+    populateStateFilter();
+    renderDbCards();
+    renderAdminList();
+}
+
+async function adminSubmit() {
+    const name = adminVal('admName');
+    if (!name) {
+        showToast('Project name is required.');
+        return;
+    }
+    const wasEdit = editingProjectId !== null;
+    const p = adminBuildFromForm();
+    try {
+        if (wasEdit) {
+            await api('/api/projects/' + editingProjectId, { method: 'PUT', body: p });
+        } else {
+            await api('/api/projects', { method: 'POST', body: p });
+        }
+        await reloadProjects();
+        adminResetForm();
+        showToast(wasEdit ? 'Project updated.' : 'Project added to database.');
+    } catch (err) {
+        showToast('Save failed: ' + err.message);
+    }
+}
+
+function renderAdminList() {
+    if (!adminGrid) return;
+    if (adminCount) adminCount.textContent = INDIA_PROJECT_DB.length + ' projects';
+    if (INDIA_PROJECT_DB.length === 0) {
+        adminGrid.innerHTML = '<div style="grid-column:1/-1;text-align:center;color:var(--text-muted);padding:3rem;">No projects in the database yet. Add one above.</div>';
+        return;
+    }
+    adminGrid.innerHTML = INDIA_PROJECT_DB.map(p => `
+        <div class="db-card risk-${getStatusClass(p.risk)}">
+            <div class="db-card-top">
+                <div class="db-card-heading">
+                    <span class="db-card-icon">${typeIcon(p.type)}</span>
+                    <div class="db-card-name">${escapeHtml(p.name)}</div>
+                </div>
+                <div class="db-card-risk ${getStatusClass(p.risk)}">${p.risk}</div>
+            </div>
+            <div class="db-card-category">${typeIcon(p.type)} ${escapeHtml(p.category || '')}</div>
+            ${p.state ? `<div class="db-card-state">&#128506; ${escapeHtml(p.state)}</div>` : ''}
+            <div class="db-card-meta">
+                <div class="db-meta-item">
+                    <span class="db-meta-label">Budget</span>
+                    <span class="db-meta-value">${formatMoney(p.budget)}</span>
+                </div>
+                <div class="db-meta-item">
+                    <span class="db-meta-label">Timeline</span>
+                    <span class="db-meta-value">${p.timeline} months</span>
+                </div>
+            </div>
+            <div class="db-card-progress">
+                <div class="db-progress-label">
+                    <span>Completion</span>
+                    <span>${p.completion}%</span>
+                </div>
+                <div class="db-progress-bar">
+                    <div class="db-progress-fill" style="width:${p.completion}%;background:${p.completion > 70 ? 'var(--green)' : p.completion > 40 ? 'var(--orange)' : 'var(--red)'};"></div>
+                </div>
+            </div>
+            <div class="db-card-footer">
+                <span class="db-card-status ${p.status}">${p.status.replace('-', ' ').toUpperCase()}</span>
+                <span class="admin-actions">
+                    <button class="mini-btn" onclick="openModal(${p.id})">View</button>
+                    <button class="mini-btn" onclick="adminEdit(${p.id})">Edit</button>
+                    <button class="mini-btn danger" onclick="adminDelete(${p.id})">Delete</button>
+                </span>
+            </div>
+        </div>
+    `).join('');
+}
+
+function adminEdit(id) {
+    const p = INDIA_PROJECT_DB.find(x => x.id === id);
+    if (!p) return;
+    editingProjectId = id;
+    adminView.style.display = 'block';
+    adminSet('admName', p.name);
+    adminSet('admType', p.type);
+    adminSet('admStatus', p.status);
+    adminSet('admState', p.state);
+    adminSet('admLocation', p.location);
+    adminSet('admAgency', p.agency);
+    adminSet('admFunding', p.funding);
+    adminSet('admBudget', p.budget);
+    adminSet('admSpent', p.spent);
+    adminSet('admRisk', p.risk);
+    adminSet('admCompletion', p.completion);
+    adminSet('admTimeline', p.timeline);
+    adminSet('admElapsed', p.elapsed);
+    adminSet('admWorkforce', p.workforce);
+    adminSet('admStartDate', p.startDate);
+    adminSet('admRevisedDate', p.revisedDate);
+    adminSet('admOriginalDeadline', p.originalDeadline);
+    adminSet('admContractors', (p.contractors || []).join('\n'));
+    adminSet('admDescription', p.description);
+    adminSet('admKeyRisks', (p.keyRisks || []).map(r => (r.severity ? r.severity + '|' : '') + (r.text || '')).join('\n'));
+    adminSet('admStrengths', (p.strengths || []).join('\n'));
+    adminSet('admWeaknesses', (p.weaknesses || []).join('\n'));
+    adminSet('admLessons', (p.lessons || []).join('\n'));
+    adminSet('admTimelineEvents', JSON.stringify(p.timeline_events || [], null, 2));
+    const title = document.getElementById('adminFormTitle');
+    if (title) title.textContent = 'Editing: ' + p.name;
+    const cancelBtn = document.getElementById('adminCancelBtn');
+    if (cancelBtn) cancelBtn.style.display = '';
+    if (adminFormCard) adminFormCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+async function adminDelete(id) {
+    const p = INDIA_PROJECT_DB.find(x => x.id === id);
+    if (!p) return;
+    if (!confirm('Delete "' + p.name + '"? This cannot be undone.')) return;
+    try {
+        await api('/api/projects/' + id, { method: 'DELETE' });
+        if (editingProjectId === id) adminResetForm();
+        await reloadProjects();
+        showToast('Project deleted.');
+    } catch (err) {
+        showToast('Delete failed: ' + err.message);
+    }
+}
+
+async function adminSeed() {
+    if (!confirm('Re-import all projects from projects.json? Existing database projects will be replaced.')) return;
+    try {
+        INDIA_PROJECT_DB = await api('/api/projects/seed', { method: 'POST' });
+        populateStateFilter();
+        renderDbCards();
+        renderAdminList();
+        showToast('Project database reset from seed.');
+    } catch (err) {
+        showToast('Re-seed failed: ' + err.message);
+    }
 }
 
 let toastTimer = null;

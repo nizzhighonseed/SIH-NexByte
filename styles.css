@@ -2074,4 +2074,101 @@ body {
     .live-metrics-grid { grid-template-columns: 1fr; }
 }
 
+/* ===========================
+   USER CHIP (topbar)
+   =========================== */
+.user-chip {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    padding: 0.3rem 0.5rem 0.3rem 0.6rem;
+    border-radius: 999px;
+}
+
+.user-avatar {
+    font-size: 0.95rem;
+    flex-shrink: 0;
+}
+
+.user-name {
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: var(--topbar-text);
+    max-width: 140px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.logout-btn {
+    background: none;
+    border: none;
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 0.8rem;
+    font-weight: 700;
+    cursor: pointer;
+    padding: 0.1rem 0.25rem;
+    border-radius: 4px;
+    transition: all 0.2s;
+}
+
+.logout-btn:hover {
+    color: #fff;
+    background: var(--red);
+}
+
+/* ===========================
+   ADMIN VIEW
+   =========================== */
+.admin-form-card {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--card-radius);
+    padding: 1.2rem 1.5rem;
+    box-shadow: var(--shadow-sm);
+    margin-bottom: 1.5rem;
+}
+
+.admin-form-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0.7rem 1rem;
+    align-items: start;
+}
+
+.admin-form-grid .adm-wide {
+    grid-column: 1 / -1;
+}
+
+.admin-form-actions {
+    margin-top: 0.5rem;
+    display: flex;
+    justify-content: flex-end;
+}
+
+.admin-form-actions .btn-analyze {
+    width: auto;
+    padding: 0.6rem 1.6rem;
+    margin-top: 0;
+}
+
+.admin-actions {
+    display: flex;
+    gap: 0.35rem;
+    flex-wrap: wrap;
+}
+
+@media (max-width: 1200px) {
+    .admin-form-grid { grid-template-columns: repeat(3, 1fr); }
+}
+@media (max-width: 900px) {
+    .admin-form-grid { grid-template-columns: repeat(2, 1fr); }
+    .user-name { max-width: 90px; }
+}
+@media (max-width: 600px) {
+    .admin-form-grid { grid-template-columns: 1fr; }
+}
+
 

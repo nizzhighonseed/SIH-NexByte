@@ -1,0 +1,13 @@
+{
+  "name": "gov-risk-management",
+  "version": "1.1.0",
+  "description": "GovRisk - Project Risk Intelligence for Indian government infrastructure projects with user accounts and a SQLite database.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "license": "MIT"
+}

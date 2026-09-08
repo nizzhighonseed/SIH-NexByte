@@ -1,3 +1,5 @@
 node_modules/
-server.js
-start-server.bat
+govrisk.db
+govrisk.db-*
+server-test.log
+server-test-err.log

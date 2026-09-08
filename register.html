@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Create Account - GovRisk</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="auth.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+</head>
+<body class="auth-body">
+
+    <div class="tricolor-bar" aria-hidden="true"></div>
+
+    <main class="auth-shell">
+        <div class="auth-card">
+            <div class="auth-brand">
+                <div class="auth-emblem" aria-hidden="true">&#128736;</div>
+                <div class="auth-brand-name">GovRisk<span class="auth-dot">.</span></div>
+                <div class="auth-brand-sub">&#128205; भारत सरकार &middot; Government of India</div>
+            </div>
+
+            <div class="auth-title">Create your account</div>
+            <div class="auth-sub">Register to save project analyses</div>
+
+            <form id="authForm" class="auth-form">
+                <div class="auth-field">
+                    <label for="authUsername">Username</label>
+                    <input type="text" id="authUsername" autocomplete="username" placeholder="3-30 characters (letters, numbers, _ . -)" required>
+                </div>
+                <div class="auth-field">
+                    <label for="authEmail">Email (optional)</label>
+                    <input type="email" id="authEmail" autocomplete="email" placeholder="you@example.com">
+                </div>
+                <div class="auth-field">
+                    <label for="authPassword">Password</label>
+                    <input type="password" id="authPassword" autocomplete="new-password" placeholder="At least 6 characters" required>
+                </div>
+                <div class="auth-error" id="authError" style="display:none;"></div>
+                <button type="submit" class="auth-btn" id="authSubmitBtn">Create Account</button>
+            </form>
+
+            <div class="auth-footer">
+                Already have an account? <a href="/login">Sign in</a>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        const form = document.getElementById('authForm');
+        const errBox = document.getElementById('authError');
+        const submitBtn = document.getElementById('authSubmitBtn');
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            errBox.style.display = 'none';
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Creating account...';
+            try {
+                const res = await fetch('/api/auth/register', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        username: document.getElementById('authUsername').value.trim(),
+                        email: document.getElementById('authEmail').value.trim(),
+                        password: document.getElementById('authPassword').value,
+                    }),
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || 'Registration failed');
+                window.location.href = '/';
+            } catch (err) {
+                errBox.textContent = err.message;
+                errBox.style.display = 'block';
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Create Account';
+            }
+        });
+    </script>
+</body>
+</html>

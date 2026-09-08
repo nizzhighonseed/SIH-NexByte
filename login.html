@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sign In - GovRisk</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="auth.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+</head>
+<body class="auth-body">
+
+    <div class="tricolor-bar" aria-hidden="true"></div>
+
+    <main class="auth-shell">
+        <div class="auth-card">
+            <div class="auth-brand">
+                <div class="auth-emblem" aria-hidden="true">&#11085;</div>
+                <div class="auth-brand-name">GovRisk<span class="auth-dot">.</span></div>
+                <div class="auth-brand-sub">&#128205; भारत सरकार &middot; Government of India</div>
+            </div>
+
+            <div class="auth-title">Sign in to continue</div>
+            <div class="auth-sub">Project Risk Intelligence &middot; Secure user accounts</div>
+
+            <form id="authForm" class="auth-form">
+                <div class="auth-field">
+                    <label for="authUsername">Username</label>
+                    <input type="text" id="authUsername" autocomplete="username" placeholder="e.g., admin" required>
+                </div>
+                <div class="auth-field">
+                    <label for="authPassword">Password</label>
+                    <input type="password" id="authPassword" autocomplete="current-password" placeholder="••••••••" required>
+                </div>
+                <div class="auth-error" id="authError" style="display:none;"></div>
+                <button type="submit" class="auth-btn" id="authSubmitBtn">Sign In</button>
+            </form>
+
+            <div class="auth-footer">
+                No account yet? <a href="/register">Create one</a>
+            </div>
+            <div class="auth-hint">Default admin: <code>admin</code> / <code>admin123</code></div>
+        </div>
+    </main>
+
+    <script>
+        const form = document.getElementById('authForm');
+        const errBox = document.getElementById('authError');
+        const submitBtn = document.getElementById('authSubmitBtn');
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            errBox.style.display = 'none';
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Signing in...';
+            try {
+                const res = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        username: document.getElementById('authUsername').value.trim(),
+                        password: document.getElementById('authPassword').value,
+                    }),
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || 'Sign in failed');
+                window.location.href = '/';
+            } catch (err) {
+                errBox.textContent = err.message;
+                errBox.style.display = 'block';
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Sign In';
+            }
+        });
+    </script>
+</body>
+</html>
